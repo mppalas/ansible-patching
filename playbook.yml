@@ -12,6 +12,16 @@
   tasks:
     - name: Update this server
       block:
+        - name: Check that the server is reachable
+          ansible.builtin.ping:
+          register: ping_result
+
+        - name: Stop here if the server is unreachable
+          ansible.builtin.assert:
+            that: not (ping_result.unreachable | default(false))
+            fail_msg: "Cannot connect to the server: {{ ping_result.msg | default('unknown reason') }}"
+            quiet: true
+
         - name: Gather facts
           ansible.builtin.setup:
 
@@ -49,6 +59,16 @@
   tasks:
     - name: Update this server
       block:
+        - name: Check that the server is reachable
+          ansible.windows.win_ping:
+          register: ping_result
+
+        - name: Stop here if the server is unreachable
+          ansible.builtin.assert:
+            that: not (ping_result.unreachable | default(false))
+            fail_msg: "Cannot connect to the server: {{ ping_result.msg | default('unknown reason') }}"
+            quiet: true
+
         - name: Install updates, repeat until none are left (max 4 reboots)
           ansible.windows.win_updates:
             category_names:
