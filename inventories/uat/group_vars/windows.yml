@@ -1,0 +1,7 @@
+---
+ansible_connection: winrm
+ansible_winrm_transport: ntlm
+ansible_port: 5985
+ansible_user: CHANGE_ME
+ansible_password: "{{ vault_windows_password }}"
+
