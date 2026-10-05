@@ -1,0 +1,21 @@
+---
+- name: Count this round
+  ansible.builtin.set_fact:
+    round_no: "{{ (round_no | default(0) | int) + 1 }}"
+
+- name: Install updates and check for reboot (OS specific)
+  ansible.builtin.include_tasks: "os_{{ ansible_facts['os_family'] }}.yml"
+
+- name: Round summary
+  ansible.builtin.debug:
+    msg: "Round {{ round_no }}: updates installed = {{ updates_changed | bool }}, reboot needed = {{ needs_reboot | bool }}"
+
+- name: Reboot now if one was requested
+  ansible.builtin.meta: flush_handlers
+
+- name: Decide if this server is finished
+  ansible.builtin.set_fact:
+    linux_done: "{{ (not (updates_changed | bool)) or ansible_check_mode }}"
+
+- name: Next step (another round, finish, or fail)
+  ansible.builtin.include_tasks: "{{ 'linux_round.yml' if (not (linux_done | bool) and (round_no | int) < 5) else ('linux_fail.yml' if not (linux_done | bool) else 'linux_done.yml') }}"

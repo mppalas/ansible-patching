@@ -1,0 +1,25 @@
+---
+- name: Install dnf-utils (needed for needs-restarting)
+  ansible.builtin.dnf:
+    name: dnf-utils
+    state: present
+
+- name: Update packages (RHEL/Alma/AL2023)
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+    update_cache: true
+  register: dnf_result
+
+- name: Check if reboot is required
+  ansible.builtin.command: needs-restarting -r
+  register: rh_reboot
+  changed_when: rh_reboot.rc == 1
+  failed_when: rh_reboot.rc not in [0, 1]
+  check_mode: false
+  notify: Reboot server
+
+- name: Remember what happened in this round
+  ansible.builtin.set_fact:
+    updates_changed: "{{ dnf_result.changed }}"
+    needs_reboot: "{{ rh_reboot.rc == 1 }}"

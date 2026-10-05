@@ -1,0 +1,19 @@
+---
+- name: Update packages (Debian/Ubuntu)
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+  register: apt_result
+
+- name: Check if reboot is required
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: deb_reboot
+  changed_when: deb_reboot.stat.exists
+  notify: Reboot server
+
+- name: Remember what happened in this round
+  ansible.builtin.set_fact:
+    updates_changed: "{{ apt_result.changed }}"
+    needs_reboot: "{{ deb_reboot.stat.exists }}"
+

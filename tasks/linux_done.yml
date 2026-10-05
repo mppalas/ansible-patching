@@ -1,0 +1,5 @@
+---
+- name: All updates are done
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: all updates are done. Rounds used: {{ round_no }}"
+

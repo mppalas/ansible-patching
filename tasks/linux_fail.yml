@@ -1,0 +1,5 @@
+---
+- name: Still installing updates after the last round
+  ansible.builtin.fail:
+    msg: "Still installing updates after 5 rounds on {{ inventory_hostname }}"
+

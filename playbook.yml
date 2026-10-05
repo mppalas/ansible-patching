@@ -1,0 +1,63 @@
+---
+- name: Update Linux servers
+  hosts: linux
+  become: true
+  serial: 1
+  max_fail_percentage: 0
+  handlers:
+    - name: Reboot server
+      ansible.builtin.reboot:
+        reboot_timeout: 1800
+      when: (round_no | int) < 5
+  tasks:
+    - name: Update this server
+      block:
+        - name: Reset the round counter
+          ansible.builtin.set_fact:
+            round_no: 0
+            linux_done: false
+
+        - name: Update rounds (reboot between rounds if needed, max 4 reboots)
+          ansible.builtin.include_tasks: tasks/linux_round.yml
+
+      rescue:
+        - name: UPDATE FAILED
+          ansible.builtin.fail:
+            msg: >-
+              UPDATE FAILED on {{ inventory_hostname }} ({{ ansible_host | default('') }}).
+              Step: {{ ansible_failed_task.name | default('unknown') }}.
+              Error: {{ ansible_failed_result.msg | default('no message') }}
+
+- name: Update Windows servers
+  hosts: windows
+  serial: 1
+  max_fail_percentage: 0
+  gather_facts: false
+  tasks:
+    - name: Update this server
+      block:
+        - name: Install updates, repeat until none are left (max 4 reboots)
+          ansible.windows.win_updates:
+            category_names:
+              - SecurityUpdates
+              - CriticalUpdates
+              - UpdateRollups
+            state: installed
+            reboot: true
+            reboot_timeout: 3600
+          register: win_result
+          until: (win_result.found_update_count == 0) or ansible_check_mode
+          retries: 4
+          delay: 30
+
+        - name: Windows server summary
+          ansible.builtin.debug:
+            msg: "{{ inventory_hostname }}: all updates are done. Rounds used: {{ win_result.attempts | default(1) }}, installed in last round: {{ win_result.installed_update_count }}"
+
+      rescue:
+        - name: UPDATE FAILED
+          ansible.builtin.fail:
+            msg: >-
+              UPDATE FAILED on {{ inventory_hostname }} ({{ ansible_host | default('') }}).
+              Step: {{ ansible_failed_task.name | default('unknown') }}.
+              Error: {{ ansible_failed_result.msg | default('no message') }}
