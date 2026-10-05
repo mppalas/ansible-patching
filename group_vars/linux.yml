@@ -1,0 +1,6 @@
+---
+# Services that must be running after the update (one per line).
+# Ubuntu/Debian use "ssh" instead of "sshd".
+check_services:
+  - sshd
+

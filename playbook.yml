@@ -3,7 +3,7 @@
   hosts: linux
   become: true
   serial: 1
-  max_fail_percentage: 0
+  gather_facts: false
   handlers:
     - name: Reboot server
       ansible.builtin.reboot:
@@ -12,6 +12,9 @@
   tasks:
     - name: Update this server
       block:
+        - name: Gather facts
+          ansible.builtin.setup:
+
         - name: Reset the round counter
           ansible.builtin.set_fact:
             round_no: 0
@@ -20,18 +23,28 @@
         - name: Update rounds (reboot between rounds if needed, max 4 reboots)
           ansible.builtin.include_tasks: tasks/linux_round.yml
 
+        - name: Remember the result
+          ansible.builtin.set_fact:
+            update_status: "OK - rounds used: {{ round_no }}"
+
       rescue:
+        - name: Remember the failure
+          ansible.builtin.set_fact:
+            update_status: >-
+              FAILED - step: {{ ansible_failed_task.name | default('unknown') }} -
+              error: {{ ansible_failed_result.msg | default('no message') }}
+              {{ ('- failed items: ' ~ (ansible_failed_result.results | default([]) | selectattr('failed', 'defined') | selectattr('failed') | map(attribute='item') | join(', '))) if ansible_failed_result.results is defined else '' }}
+
         - name: UPDATE FAILED
           ansible.builtin.fail:
-            msg: >-
-              UPDATE FAILED on {{ inventory_hostname }} ({{ ansible_host | default('') }}).
-              Step: {{ ansible_failed_task.name | default('unknown') }}.
-              Error: {{ ansible_failed_result.msg | default('no message') }}
+            msg: "UPDATE FAILED on {{ inventory_hostname }} ({{ ansible_host | default('') }}). {{ update_status }}"
+          ignore_errors: true
+
+      ignore_unreachable: true
 
 - name: Update Windows servers
   hosts: windows
   serial: 1
-  max_fail_percentage: 0
   gather_facts: false
   tasks:
     - name: Update this server
@@ -50,14 +63,66 @@
           retries: 4
           delay: 30
 
+        - name: Check that the required services are running
+          ansible.windows.win_service_info:
+            name: "{{ item }}"
+          loop: "{{ check_services }}"
+          register: service_check
+          until: service_check.services | map(attribute='state') | list == ['started']
+          retries: 6
+          delay: 10
+
         - name: Windows server summary
           ansible.builtin.debug:
-            msg: "{{ inventory_hostname }}: all updates are done. Rounds used: {{ win_result.attempts | default(1) }}, installed in last round: {{ win_result.installed_update_count }}"
+            msg: "{{ inventory_hostname }}: all updates are done. Rounds used: {{ win_result.attempts | default(1) }}, installed in last round: {{ win_result.installed_update_count }}. Services running: {{ check_services | join(', ') }}"
+
+        - name: Remember the result
+          ansible.builtin.set_fact:
+            update_status: "OK - rounds used: {{ win_result.attempts | default(1) }}"
 
       rescue:
+        - name: Remember the failure
+          ansible.builtin.set_fact:
+            update_status: >-
+              FAILED - step: {{ ansible_failed_task.name | default('unknown') }} -
+              error: {{ ansible_failed_result.msg | default('no message') }}
+              {{ ('- failed items: ' ~ (ansible_failed_result.results | default([]) | selectattr('failed', 'defined') | selectattr('failed') | map(attribute='item') | join(', '))) if ansible_failed_result.results is defined else '' }}
+
         - name: UPDATE FAILED
           ansible.builtin.fail:
-            msg: >-
-              UPDATE FAILED on {{ inventory_hostname }} ({{ ansible_host | default('') }}).
-              Step: {{ ansible_failed_task.name | default('unknown') }}.
-              Error: {{ ansible_failed_result.msg | default('no message') }}
+            msg: "UPDATE FAILED on {{ inventory_hostname }} ({{ ansible_host | default('') }}). {{ update_status }}"
+          ignore_errors: true
+
+      ignore_unreachable: true
+
+- name: Final report
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Prepare the report
+      ansible.builtin.set_fact:
+        stamp: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+        report_text: |-
+          {% for h in groups['all'] if hostvars[h].update_status is defined %}
+          {{ h }}: {{ hostvars[h].update_status }}
+          {% endfor %}
+
+    - name: Create the log folder
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/logs"
+        state: directory
+
+    - name: Write the log file
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/logs/patching_{{ stamp }}.txt"
+        content: "Patching report {{ stamp }}\n{{ report_text }}\n"
+
+    - name: Show the report
+      ansible.builtin.debug:
+        msg: "{{ report_text.split('\n') }}"
+
+    - name: Final result
+      ansible.builtin.fail:
+        msg: "Some servers FAILED, see the report above and the log file in the logs folder."
+      failed_when: "'FAILED' in report_text"

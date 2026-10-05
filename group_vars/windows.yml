@@ -1,0 +1,6 @@
+---
+# Services that must be running after the update (one per line).
+# Use the service short name, e.g. W3SVC, Spooler.
+check_services:
+  - WinRM
+
