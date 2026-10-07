@@ -1,0 +1,14 @@
+[linux]
+uat-rhel   ansible_host=10.0.9.185  ansible_user=ec2-user
+uat-ubuntu ansible_host=10.0.31.221 ansible_user=ubuntu
+uat-al2023 ansible_host=10.0.12.42  ansible_user=ec2-user
+
+[linux:vars]
+ansible_ssh_private_key_file=~/.ssh/ansible-poc-uat.pem
+
+[RHEL:vars]
+ansible_ssh_private_key_file_rhel=~/.ssh/rhel_instance-ansible_poc
+ansible_ssh_private_key_file_al2023=~/.ssh/al2023_instance-ansible_poc
+[windows]
+uat-win ansible_host=10.0.23.252
+
