@@ -2,40 +2,39 @@
 cd "$(dirname "$0")"
 export ANSIBLE_HOST_KEY_CHECKING=False
 INVENTORY="${INVENTORY:-inventory.ini}"
-mkdir -p logs
-
+LOG_ROOT="${LOG_ROOT:-/mnt/c/Users/mppalas/Documents/patching-logs}"
+ENV_NAME="${ENV_NAME:-$(basename "$(dirname "$INVENTORY")")}"
+[ "$ENV_NAME" = "." ] && ENV_NAME="default"
 STAMP="$(date +%Y-%m-%d_%H-%M-%S)"
-export ANSIBLE_LOG_PATH="logs/ansible_${STAMP}.txt"
-
-# One log file per server (every step, success or failure)
-HOSTLOGS="logs/hosts_${STAMP}"
-mkdir -p "$HOSTLOGS"
+ENV_DIR="$LOG_ROOT/$ENV_NAME"
+RUN_DIR="$ENV_DIR/_runs/$STAMP"
+mkdir -p "$RUN_DIR/servers" logs
+export ANSIBLE_LOG_PATH="$RUN_DIR/ansible_detailed.txt"
 export ANSIBLE_CALLBACKS_ENABLED="community.general.log_plays"
-export ANSIBLE_LOG_FOLDER="$HOSTLOGS"
-
+export ANSIBLE_LOG_FOLDER="$RUN_DIR/servers"
 MARKER="$(mktemp)"
-
+echo "Environment: $ENV_NAME"
 echo "Inventory: $INVENTORY"
-echo "Detailed log: $ANSIBLE_LOG_PATH"
-echo "Per-server logs: $HOSTLOGS/"
-
+echo "Logs folder: $ENV_DIR"
 ansible-playbook -i "$INVENTORY" playbook.yml "$@"
 RC=$?
-
-# Give every per-server log a .txt extension
-for f in "$HOSTLOGS"/*; do
-  [ -f "$f" ] && case "$f" in *.txt) ;; *) mv "$f" "$f.txt" ;; esac
+for f in "$RUN_DIR"/servers/*; do
+  [ -f "$f" ] || continue
+  case "$f" in
+    *.txt) ;;
+    *) mv "$f" "$f.txt"; f="$f.txt" ;;
+  esac
+  host="$(basename "$f" .txt)"
+  if [ "$host" != "localhost" ]; then
+    mkdir -p "$ENV_DIR/$host"
+    cp "$f" "$ENV_DIR/$host/$STAMP.txt"
+  fi
 done
-
-# Bundle the logs of THIS run into one shareable file
-SHARE="logs/share_${STAMP}.tar.gz"
 REPORT="$(find logs -maxdepth 1 -name 'patching_*.txt' -newer "$MARKER" 2>/dev/null | head -1)"
-if [ -n "$REPORT" ]; then
-  tar czf "$SHARE" "$REPORT" "$ANSIBLE_LOG_PATH" "$HOSTLOGS"
-else
-  tar czf "$SHARE" "$ANSIBLE_LOG_PATH" "$HOSTLOGS"
-fi
+[ -n "$REPORT" ] && mv "$REPORT" "$RUN_DIR/summary_report.txt"
+TMP_TAR="$(mktemp --suffix=.tar.gz)"
+tar czf "$TMP_TAR" -C "$RUN_DIR" .
+mv "$TMP_TAR" "$RUN_DIR/share.tar.gz"
 rm -f "$MARKER"
-echo "Shareable logs: $SHARE"
-
+echo "Shareable archive: $RUN_DIR/share.tar.gz"
 exit $RC
