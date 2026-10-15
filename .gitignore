@@ -4,3 +4,5 @@ inventories/*/vault.yml
 logs/
 inventories/*/group_vars/all/vault.yml
 inventories/aeon-uat/
+inventory/
+test-search-updates.yml
