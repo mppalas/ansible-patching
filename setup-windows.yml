@@ -1,0 +1,40 @@
+---
+- name: Prepare Windows servers for patching
+  hosts: windows
+  gather_facts: false
+  serial: 1
+
+  vars_prompt:
+    - name: setup_user
+      prompt: "Admin user for setup (e.g. aeon-uat\\mppalas_uat)"
+      private: false
+    - name: setup_password
+      prompt: "Password"
+      private: true
+
+  vars:
+    ansible_user: "{{ setup_user }}"
+    ansible_password: "{{ setup_password }}"
+    patch_account: 'aeon-uat\svc-ansible_uat'
+
+  tasks:
+    - name: Add the patching account to local Administrators
+      ansible.windows.win_group_membership:
+        name: Administrators
+        members:
+          - "{{ patch_account }}"
+        state: present
+
+    - name: Deny local logon for the patching account
+      ansible.windows.win_user_right:
+        name: SeDenyInteractiveLogonRight
+        users:
+          - "{{ patch_account }}"
+        action: add
+
+    - name: Deny RDP logon for the patching account
+      ansible.windows.win_user_right:
+        name: SeDenyRemoteInteractiveLogonRight
+        users:
+          - "{{ patch_account }}"
+        action: add

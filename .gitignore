@@ -3,3 +3,4 @@ inventories/*/vault.yml
 *.retry
 logs/
 inventories/*/group_vars/all/vault.yml
+inventories/aeon-uat/

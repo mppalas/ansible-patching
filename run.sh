@@ -5,36 +5,32 @@ INVENTORY="${INVENTORY:-inventory.ini}"
 LOG_ROOT="${LOG_ROOT:-/mnt/c/Users/mppalas/Documents/patching-logs}"
 ENV_NAME="${ENV_NAME:-$(basename "$(dirname "$INVENTORY")")}"
 [ "$ENV_NAME" = "." ] && ENV_NAME="default"
-STAMP="$(date +%Y-%m-%d_%H-%M-%S)"
+STAMP="$(date +%d-%m-%YT%H-%M-%S)"
 ENV_DIR="$LOG_ROOT/$ENV_NAME"
-RUN_DIR="$ENV_DIR/_runs/$STAMP"
-mkdir -p "$RUN_DIR/servers" logs
-export ANSIBLE_LOG_PATH="$RUN_DIR/ansible_detailed.txt"
+STAGE="$(mktemp -d)"
+mkdir -p "$ENV_DIR" logs
+export ANSIBLE_LOG_PATH="$ENV_DIR/$ENV_NAME-detailed-$STAMP.txt"
 export ANSIBLE_CALLBACKS_ENABLED="community.general.log_plays"
-export ANSIBLE_LOG_FOLDER="$RUN_DIR/servers"
+export ANSIBLE_LOG_FOLDER="$STAGE"
 MARKER="$(mktemp)"
 echo "Environment: $ENV_NAME"
 echo "Inventory: $INVENTORY"
 echo "Logs folder: $ENV_DIR"
+export AWS_PROFILE="${AWS_PROFILE:-ansible-patching}"
+aws sts get-caller-identity >/dev/null 2>&1 || aws sso login --use-device-code
 ansible-playbook -i "$INVENTORY" playbook.yml "$@"
 RC=$?
-for f in "$RUN_DIR"/servers/*; do
+for f in "$STAGE"/*; do
   [ -f "$f" ] || continue
-  case "$f" in
-    *.txt) ;;
-    *) mv "$f" "$f.txt"; f="$f.txt" ;;
-  esac
   host="$(basename "$f" .txt)"
   if [ "$host" != "localhost" ]; then
-    mkdir -p "$ENV_DIR/$host"
-    cp "$f" "$ENV_DIR/$host/$STAMP.txt"
+    cp "$f" "$ENV_DIR/$host-$STAMP.txt"
   fi
 done
 REPORT="$(find logs -maxdepth 1 -name 'patching_*.txt' -newer "$MARKER" 2>/dev/null | head -1)"
-[ -n "$REPORT" ] && mv "$REPORT" "$RUN_DIR/summary_report.txt"
-TMP_TAR="$(mktemp --suffix=.tar.gz)"
-tar czf "$TMP_TAR" -C "$RUN_DIR" .
-mv "$TMP_TAR" "$RUN_DIR/share.tar.gz"
-rm -f "$MARKER"
-echo "Shareable archive: $RUN_DIR/share.tar.gz"
+if [ -n "$REPORT" ]; then
+  cp "$REPORT" "$ENV_DIR/$ENV_NAME-summary-$STAMP.txt"
+  rm -f "$REPORT"
+fi
+rm -rf "$STAGE" "$MARKER"
 exit $RC

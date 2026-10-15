@@ -1,0 +1,55 @@
+---
+- name: Prepare Linux servers for patching
+  hosts: linux
+  gather_facts: false
+  become: true
+  force_handlers: true
+
+  vars:
+    patch_account: svc-ansible_uat@aeon-uat.net
+    patch_group: uat-ansible-patching@aeon-uat.net
+
+  tasks:
+    - name: Refresh the AD user and group cache
+      ansible.builtin.command: sss_cache -E
+      changed_when: false
+      check_mode: false
+
+    - name: Read the groups of the patching account
+      ansible.builtin.command: id -nG {{ patch_account }}
+      register: patch_account_groups
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Stop here if the server does not see the patching account in the patching group
+      ansible.builtin.assert:
+        that:
+          - patch_group in patch_account_groups.stdout
+        fail_msg: "Server does not see {{ patch_account }} in {{ patch_group }} (AD/SSSD/DNS problem). id output: {{ patch_account_groups.stdout }} {{ patch_account_groups.stderr }}"
+        success_msg: "Server sees {{ patch_account }} in {{ patch_group }}"
+
+    - name: Allow the patching group in SSH AllowGroups
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^(AllowGroups(?!.*{{ patch_group | regex_escape }}).*)$'
+        line: '\1 {{ patch_group }}'
+        backrefs: true
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload sshd
+
+    - name: Allow the patching account to use sudo
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/ansible-patching
+        content: |
+          {{ patch_account }} ALL=(root) ALL
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+  handlers:
+    - name: Reload sshd
+      ansible.builtin.service:
+        name: sshd
+        state: reloaded
